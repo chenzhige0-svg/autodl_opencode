@@ -1,0 +1,13 @@
+# Runtime / editor noise
+*.log
+*.tmp
+*.swp
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+
+# Local runtime state if the toolkit is run from inside the repo
+/logs/
+/backups/
+/state/

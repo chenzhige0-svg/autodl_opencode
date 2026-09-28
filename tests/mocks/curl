@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# tests/mocks/curl - deterministic curl stand-in for the test suite.
+#
+# Behaviour is controlled by environment variables:
+#   OC_MOCK_CURL_ARCHIVE  path to a file returned for "-o <file>" downloads
+#   OC_MOCK_CURL_FAIL=1   make -o downloads fail
+#   OC_MOCK_CURL_EXIT=N   exit code to use when failing (default 28 timeout)
+#   OC_MOCK_CURL_STATUS=N http status printed for -w "%{http_code}"
+#   OC_MOCK_LATEST=V      version returned by the GitHub API JSON query
+#   OC_MOCK_CURL_LOG      file to append an invocation record to
+set -u
+
+[ -n "${OC_MOCK_CURL_LOG:-}" ] && printf '%s\n' "$*" >>"$OC_MOCK_CURL_LOG"
+
+out=""
+want_w=0
+prev=""
+for a in "$@"; do
+  case "$prev" in
+    -o) out="$a" ;;
+  esac
+  case "$a" in
+    *'{http_code}'*) want_w=1 ;;
+    -o) : ;;
+  esac
+  prev="$a"
+done
+url="${*: -1}"
+
+if [ "$want_w" = "1" ]; then
+  printf '%s 0.010000' "${OC_MOCK_CURL_STATUS:-200}"
+  exit "${OC_MOCK_CURL_EXIT:-0}"
+fi
+
+if [ -n "$out" ]; then
+  if [ "${OC_MOCK_CURL_FAIL:-0}" = "1" ]; then
+    exit "${OC_MOCK_CURL_FAIL_EXIT:-28}"
+  fi
+  if [ "$out" = "/dev/null" ]; then exit 0; fi
+  if [ -n "${OC_MOCK_CURL_ARCHIVE:-}" ] && [ -f "$OC_MOCK_CURL_ARCHIVE" ]; then
+    cp "$OC_MOCK_CURL_ARCHIVE" "$out"
+    exit 0
+  fi
+  printf 'mock-download' >"$out"
+  exit 0
+fi
+
+case "$url" in
+  *api.github.com*) printf '{"tag_name":"v%s"}' "${OC_MOCK_LATEST:-9.9.9}" ;;
+  *) printf 'ok' ;;
+esac
+exit 0

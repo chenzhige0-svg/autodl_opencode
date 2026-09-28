@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# tests/mocks/opencode - fake OpenCode binary used by the installer tests.
+case "${1:-}" in
+  --version|-v) printf '%s\n' "${OC_MOCK_OPENCODE_VERSION:-9.9.9}" ;;
+  run)          printf 'pong\n' ;;
+  upgrade)      printf 'upgraded\n' ;;
+  auth)
+    case "${2:-}" in
+      list|ls) printf '{}\n' ;;
+      *)      printf 'auth ok\n' ;;
+    esac
+    ;;
+  *) printf 'fake opencode\n' ;;
+esac
+exit 0

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://opencode.ai/config.json"
+
+  // ---------------------------------------------------------------------------
+  // opencode-autodl config template (JSONC).
+  //
+  // This template is only used when NO config exists yet. When a config already
+  // exists it is left untouched unless you explicitly pass overrides via
+  // environment variables (OPENCODE_MODEL, OPENCODE_PROVIDER, ...).
+  //
+  // Comments are stripped when this file is normalized into opencode.json.
+  //
+  // Provider example (configure interactively with '/connect' instead when
+  // possible; never commit real API keys):
+  //
+  //   "provider": {
+  //     "my-provider": {
+  //       "npm": "@ai-sdk/openai-compatible",
+  //       "name": "My Provider",
+  //       "options": {
+  //         "baseURL": "https://api.example.com/v1",
+  //         "apiKey": "{env:MY_PROVIDER_API_KEY}"
+  //       },
+  //       "models": {
+  //         "my-model": { "name": "My Model" }
+  //       }
+  //     }
+  //   },
+  //   "model": "my-provider/my-model"
+  // ---------------------------------------------------------------------------
+}

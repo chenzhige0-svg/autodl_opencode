@@ -1,0 +1,44 @@
+// examples/providers.example.jsonc
+//
+// Example provider configurations for ~/.config/opencode/opencode.json.
+// Copy only the parts you need. Never commit real API keys: reference them as
+// {env:VAR} (or {file:/path}) so the secret stays out of the config file.
+//
+// Configure interactively with `opencode auth login` or the `/connect` command
+// whenever possible; this file is for declarative/offline setups.
+
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // Default model, referenced as providerId/modelId
+  "model": "anthropic/claude-sonnet-4-5",
+  "small_model": "anthropic/claude-haiku-4-5",
+
+  "provider": {
+    // A built-in provider whose key comes from the environment.
+    "anthropic": {
+      "options": {
+        "apiKey": "{env:ANTHROPIC_API_KEY}"
+      }
+    },
+
+    // A custom OpenAI-compatible endpoint (self-hosted or third party).
+    "my-endpoint": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "My Endpoint",
+      "options": {
+        "baseURL": "https://api.example.com/v1",
+        "apiKey": "{env:MY_ENDPOINT_API_KEY}",
+        "headers": {
+          "X-Custom-Header": "value"
+        }
+      },
+      "models": {
+        "my-model": {
+          "name": "My Model",
+          "limit": { "context": 128000, "output": 8192 }
+        }
+      }
+    }
+  }
+}
