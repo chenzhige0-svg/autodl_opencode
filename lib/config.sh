@@ -16,6 +16,37 @@ config_py() {
   "$py" "$OC_CONFIG_PY" "$@"
 }
 
+# True when any preset or explicit override is requested.
+config_overrides_requested() {
+  [ -n "${OPENCODE_PRESET:-}" ] && return 0
+  [ -n "${OPENCODE_MODEL:-}" ] && return 0
+  [ -n "${OPENCODE_SMALL_MODEL:-}" ] && return 0
+  [ -n "${OPENCODE_PROVIDER:-}" ] && return 0
+  [ -n "${OPENCODE_AUTOUPDATE:-}" ] && return 0
+  return 1
+}
+
+# Best-effort: make python3 available so JSON/JSONC config merging stays safe.
+# Returns 0 when a python interpreter is usable afterwards.
+config_ensure_python() {
+  config_python >/dev/null && return 0
+  if [ "$DRY_RUN" = "1" ]; then
+    log_dry "install python3 (needed for safe config merging)"
+    return 1
+  fi
+  if ! is_root; then
+    log_warn "python3 is required to apply config defaults safely (need root to install)"
+    return 1
+  fi
+  if ! declare -F pkg_install >/dev/null 2>&1; then
+    log_warn "python3 is missing and no package installer is available"
+    return 1
+  fi
+  log_info "python3 is required for safe config merging; installing it"
+  pkg_install python3 || { log_warn "could not install python3"; return 1; }
+  config_python >/dev/null
+}
+
 # config_locate -> path of the active config file (empty when none)
 config_locate() {
   if [ -n "${OPENCODE_CONFIG:-}" ] && [ -f "$OPENCODE_CONFIG" ]; then
@@ -219,11 +250,67 @@ config_build_overrides_json() {
   return 0
 }
 
+# Resolve $OPENCODE_PRESET to a non-secret default file under config/presets/.
+# Returns 1 when unset, unsafe or missing.
+config_preset_file() {
+  local name="${OPENCODE_PRESET:-}"
+  [ -n "$name" ] || return 1
+  case "$name" in
+    *[!A-Za-z0-9_-]*) return 1 ;;
+  esac
+  local f="$OCDEPLOY_ROOT/config/presets/$name.jsonc"
+  [ -f "$f" ] || return 1
+  printf '%s' "$f"
+}
+
+# Build the effective overrides for config_generate into $1: the selected preset
+# (trusted, non-secret defaults) with explicit environment overrides layered on
+# top. Sets OC_GEN_HAS_OVERRIDES=1 when the result is non-empty and
+# OC_GEN_PRESET_ONLY=1 when only the preset contributed.
+config_build_effective_overrides() {
+  local out="$1"
+  OC_GEN_HAS_OVERRIDES=0
+  OC_GEN_PRESET_ONLY=0
+  local preset_file="" env_file="$OC_TMPDIR/env-overrides.json"
+  preset_file="$(config_preset_file 2>/dev/null || true)"
+  config_build_overrides_json "$env_file" || true
+  local has_env=0
+  [ -s "$env_file" ] && grep -q ':' "$env_file" && has_env=1
+
+  local have_python=0
+  config_python >/dev/null && have_python=1
+
+  if [ -n "$preset_file" ] && [ "$have_python" = "1" ]; then
+    if [ "$has_env" = "1" ]; then
+      config_py merge "$preset_file" "$env_file" "$out" || return 1
+    else
+      config_py normalize "$preset_file" "$out" || return 1
+      OC_GEN_PRESET_ONLY=1
+    fi
+    OC_GEN_HAS_OVERRIDES=1
+    return 0
+  fi
+
+  if [ -n "$preset_file" ]; then
+    log_warn "preset '${OPENCODE_PRESET:-}' needs python3 for safe merging; skipping it"
+  fi
+  if [ "$has_env" = "1" ] && [ "$have_python" = "1" ]; then
+    cp -f "$env_file" "$out" || return 1
+    OC_GEN_HAS_OVERRIDES=1
+    return 0
+  fi
+  : >"$out"
+  return 0
+}
+
 config_generate() {
   local existing; existing="$(config_locate || true)"
   oc_tmp_init >/dev/null
+  if config_overrides_requested && ! config_python >/dev/null; then
+    config_ensure_python || log_warn "python3 unavailable; config defaults may be skipped"
+  fi
   local overrides="$OC_TMPDIR/overrides.json"
-  config_build_overrides_json "$overrides" || overrides=""
+  config_build_effective_overrides "$overrides" || overrides=""
   local has_overrides=0
   [ -s "$overrides" ] && grep -q ':' "$overrides" && has_overrides=1
 
@@ -266,7 +353,9 @@ config_generate() {
   fi
   log_info "planned config changes:"
   diff -u "$existing" "$tmpout" 2>/dev/null | sed 's/^/    /' >&2 || true
-  if ! confirm "Apply these config changes to $existing?"; then
+  if [ "$OC_GEN_PRESET_ONLY" = "1" ]; then
+    log_info "applying preset '${OPENCODE_PRESET}' defaults (non-secret)"
+  elif ! confirm "Apply these config changes to $existing?"; then
     log_warn "config changes skipped by user"
     return 0
   fi

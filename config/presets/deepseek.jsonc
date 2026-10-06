@@ -1,0 +1,31 @@
+// config/presets/deepseek.jsonc
+//
+// Non-secret DeepSeek defaults for AutoDL instances.
+//
+// Apply to a fresh or existing config with either:
+//     OPENCODE_PRESET=deepseek ./setup.sh
+//     ./setup.sh --preset deepseek
+//
+// Default model: deepseek/deepseek-flash (DeepSeek-V4.1-Flash) with maximum
+// reasoning effort ("4.1 flash max"). The API key is intentionally NOT stored
+// here. Provide it with `opencode auth login` (writes
+// ~/.local/share/opencode/auth.json) or via the DEEPSEEK_API_KEY environment
+// variable referenced as {env:DEEPSEEK_API_KEY}.
+{
+  "model": "deepseek/deepseek-flash",
+  "small_model": "deepseek/deepseek-flash",
+  "provider": {
+    "deepseek": {
+      "models": {
+        "deepseek-flash": {
+          "name": "DeepSeek V4.1 Flash",
+          "options": { "reasoningEffort": "max" }
+        },
+        "deepseek-v4-pro": {
+          "name": "DeepSeek V4 Pro",
+          "options": { "reasoningEffort": "max" }
+        }
+      }
+    }
+  }
+}

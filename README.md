@@ -46,8 +46,8 @@ git clone <your-repo> ~/opencode-autodl && cd ~/opencode-autodl
 # 2. (optional) speed up GitHub in mainland-China regions
 source /etc/network_turbo
 
-# 3. deploy
-./setup.sh
+# 3. deploy (the deepseek preset sets the V4.1 Flash model with max reasoning)
+./setup.sh --preset deepseek
 ```
 
 The default `deploy` flow prints an environment summary, installs OpenCode if
@@ -90,7 +90,7 @@ Global flags: `--dry-run`, `--yes`, `--verbose`, `--json`, `--no-color`,
 
 Install/persistence flags: `--method curl|npm|bun|pnpm|auto`,
 `--opencode-version V`, `--force`, `--persist auto|fs|tmp|path|none`,
-`--persist-dir D`, `--config FILE`.
+`--persist-dir D`, `--preset NAME`, `--config FILE`.
 
 ### Preview without changing anything
 
@@ -115,6 +115,24 @@ export OPENCODE_BASE_URL="https://api.anthropic.com/v1"
 export OPENCODE_API_KEY_ENV="ANTHROPIC_API_KEY"   # referenced as {env:...}
 ./setup.sh config
 ```
+
+### DeepSeek preset (V4.1 Flash, max reasoning)
+
+A non-secret preset is bundled at `config/presets/deepseek.jsonc`. It sets the
+default model to `deepseek/deepseek-flash` (DeepSeek-V4.1-Flash) with
+`reasoningEffort: max` ("4.1 flash max") and declares the V4.1 Flash / V4 Pro
+models:
+
+```bash
+./setup.sh --preset deepseek          # equivalent: OPENCODE_PRESET=deepseek ./setup.sh
+```
+
+Presets contain no credentials. Authenticate once with `opencode auth login`
+(which writes `~/.local/share/opencode/auth.json`) or export
+`DEEPSEEK_API_KEY` and reference it as `{env:DEEPSEEK_API_KEY}`. Explicit
+`OPENCODE_*` overrides are layered on top of the preset and win on conflict.
+A fresh install already gets these defaults from
+`config/opencode.template.jsonc`.
 
 Or authenticate interactively (recommended):
 
@@ -183,7 +201,8 @@ lib/repair.sh            Bounded automatic repairs
 lib/verify.sh            Post-deploy verification
 lib/backup.sh            Config/credential backup and restore
 scripts/oc_config.py     JSON/JSONC validate/normalize/get/set/merge
-config/                  Non-secret templates + example env
+config/                  Non-secret templates, presets + example env
+config/presets/          Named non-secret default configs (e.g. deepseek)
 tests/                   Dependency-free test suite + curl/opencode mocks
 docs/                    Research record and architecture
 examples/                AutoDL quick-start and provider examples

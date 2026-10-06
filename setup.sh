@@ -75,7 +75,8 @@ INSTALL / PERSIST OPTIONS:
 
 CONFIG OVERRIDES (env vars, applied only when set):
   OPENCODE_MODEL, OPENCODE_SMALL_MODEL, OPENCODE_PROVIDER,
-  OPENCODE_BASE_URL, OPENCODE_API_KEY_ENV, OPENCODE_AUTOUPDATE
+  OPENCODE_BASE_URL, OPENCODE_API_KEY_ENV, OPENCODE_AUTOUPDATE,
+  OPENCODE_PRESET (non-secret defaults from config/presets/<name>.jsonc)
 
 EXIT CODES:
   0 ok | 1 error | 2 usage | 3 environment/network | 4 needs authentication
@@ -109,6 +110,7 @@ parse_args() {
       --force) FORCE_INSTALL=1 ;;
       --persist) shift; OC_PERSIST_MODE="${1:-}"; [ -n "$OC_PERSIST_MODE" ] || die "--persist requires a value" "$OC_EXIT_USAGE" ;;
       --persist-dir) shift; OC_PERSIST_DIR="${1:-}"; [ -n "$OC_PERSIST_DIR" ] || die "--persist-dir requires a value" "$OC_EXIT_USAGE" ;;
+      --preset) shift; OPENCODE_PRESET="${1:-}"; [ -n "$OPENCODE_PRESET" ] || die "--preset requires a value" "$OC_EXIT_USAGE" ;;
       -c|--config) shift; OC_CONFIG_TEMPLATE="${1:-}"; [ -n "$OC_CONFIG_TEMPLATE" ] || die "--config requires a value" "$OC_EXIT_USAGE" ;;
       --with-credentials) BACKUP_WITH_CREDENTIALS=1 ;;
       --archive) BACKUP_ARCHIVE=1 ;;
