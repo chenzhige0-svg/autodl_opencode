@@ -21,6 +21,8 @@ export OCDEPLOY_ROOT
 . "$OCDEPLOY_ROOT/lib/net.sh"
 # shellcheck source=lib/install.sh
 . "$OCDEPLOY_ROOT/lib/install.sh"
+# shellcheck source=lib/autoupdate.sh
+. "$OCDEPLOY_ROOT/lib/autoupdate.sh"
 # shellcheck source=lib/path.sh
 . "$OCDEPLOY_ROOT/lib/path.sh"
 # shellcheck source=lib/config.sh
@@ -49,7 +51,9 @@ COMMANDS (no command runs a safe 'deploy' flow):
   verify              verify the deployment
   backup              back up configuration (optionally credentials)
   restore <dir>       restore configuration from a backup
-  update [version]    explicitly upgrade OpenCode
+  update [version]    upgrade OpenCode (no-op when already current)
+  autoupdate on|off|status
+                      keep OpenCode on the latest release automatically
   persist             move config/data into the persistent store
   unpersist           move config/data back to local directories
   config              create/merge config from environment variables
@@ -68,6 +72,7 @@ GLOBAL OPTIONS:
 INSTALL / PERSIST OPTIONS:
       --method M      install method: curl|npm|bun|pnpm|auto (default curl)
       --opencode-version V   install/upgrade to a specific version
+      --check         with 'update': only report whether a newer release exists
       --force         reinstall even if a healthy install exists
       --persist M     persistence mode: auto|fs|tmp|path|none (default auto)
       --persist-dir D explicit persistence directory (with --persist path)
@@ -81,6 +86,7 @@ CONFIG OVERRIDES (env vars, applied only when set):
 EXIT CODES:
   0 ok | 1 error | 2 usage | 3 environment/network | 4 needs authentication
   5 verification failed | 6 manual action required | 7 locked
+  10 update available ('update --check')
 EOF
 }
 
@@ -94,6 +100,7 @@ INSTALL_VERSION=""
 BACKUP_WITH_CREDENTIALS=0
 BACKUP_ARCHIVE=0
 FORCE_INSTALL=0
+UPDATE_CHECK_ONLY=0
 
 parse_args() {
   while [ $# -gt 0 ]; do
@@ -107,6 +114,7 @@ parse_args() {
       --version) printf 'opencode-autodl %s\n' "$OC_VERSION"; exit "$OC_EXIT_OK" ;;
       --method) shift; OC_INSTALL_METHOD="${1:-}"; [ -n "$OC_INSTALL_METHOD" ] || die "--method requires a value" "$OC_EXIT_USAGE" ;;
       --opencode-version) shift; INSTALL_VERSION="${1:-}"; [ -n "$INSTALL_VERSION" ] || die "--opencode-version requires a value" "$OC_EXIT_USAGE" ;;
+      --check) UPDATE_CHECK_ONLY=1 ;;
       --force) FORCE_INSTALL=1 ;;
       --persist) shift; OC_PERSIST_MODE="${1:-}"; [ -n "$OC_PERSIST_MODE" ] || die "--persist requires a value" "$OC_EXIT_USAGE" ;;
       --persist-dir) shift; OC_PERSIST_DIR="${1:-}"; [ -n "$OC_PERSIST_DIR" ] || die "--persist-dir requires a value" "$OC_EXIT_USAGE" ;;
@@ -177,8 +185,26 @@ cmd_install() {
 
 cmd_update() {
   local version="${CMD_ARGS[0]:-$INSTALL_VERSION}"
+  if [ "$UPDATE_CHECK_ONLY" = "1" ]; then
+    update_check "$version"
+    return $?
+  fi
   [ -n "$version" ] || version="latest"
   upgrade_opencode "$version"
+}
+
+cmd_autoupdate() {
+  local sub="${CMD_ARGS[0]:-status}"
+  case "$sub" in
+    on|enable)   log_step "Enabling autoupdate"; autoupdate_enable ;;
+    off|disable) log_step "Disabling autoupdate"; autoupdate_disable ;;
+    status)      autoupdate_status ;;
+    run)         autoupdate_run ;;
+    *)
+      log_error "unknown autoupdate action: $sub (expected on|off|status|run)"
+      return "$OC_EXIT_USAGE"
+      ;;
+  esac
 }
 
 cmd_doctor() {
@@ -345,6 +371,7 @@ main() {
     backup)         cmd_backup; rc=$? ;;
     restore)        cmd_restore; rc=$? ;;
     update|upgrade) cmd_update; rc=$? ;;
+    autoupdate)     cmd_autoupdate; rc=$? ;;
     persist)        cmd_persist; rc=$? ;;
     unpersist)      cmd_unpersist; rc=$? ;;
     config)         cmd_config; rc=$? ;;

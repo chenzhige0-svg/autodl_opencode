@@ -47,6 +47,7 @@ source_libs() {
   . "$PROJECT/lib/mount.sh"
   . "$PROJECT/lib/net.sh"
   . "$PROJECT/lib/install.sh"
+  . "$PROJECT/lib/autoupdate.sh"
   . "$PROJECT/lib/path.sh"
   . "$PROJECT/lib/config.sh"
   . "$PROJECT/lib/doctor.sh"

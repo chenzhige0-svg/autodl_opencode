@@ -60,9 +60,42 @@ creates a fake directory. See `docs/ARCHITECTURE.md` for durability per tier.
 The toolkit never upgrades implicitly.
 
 ```bash
-./setup.sh update              # latest, using the detected install method
-./setup.sh update 1.0.180      # or a specific version
+./setup.sh update --check      # read-only: exit 10 when a newer release exists
+./setup.sh update              # latest; no-op when already current
+./setup.sh update 1.0.180      # or a specific version (a deliberate pin)
 ```
+
+`update` asks the GitHub API for the newest tag and compares it with the
+installed version numerically (`1.0.9 < 1.0.180`) before touching the network
+again, so a scheduled update that has nothing to do performs no download. An
+install that is *newer* than the published release is never downgraded.
+
+## 3a. Following releases automatically
+
+```bash
+./setup.sh autoupdate on       # install the shell hook
+./setup.sh autoupdate status   # enabled?, last check, log location
+./setup.sh autoupdate off      # remove it
+```
+
+`autoupdate on` appends one marker-managed line to the login shell's rc files:
+
+```sh
+"<repo>/setup.sh" autoupdate run >/dev/null 2>&1 &
+```
+
+The worker is throttled to one check per `OPENCODE_AUTOUPDATE_INTERVAL` seconds
+(default 24h) via `~/.local/state/opencode-autodl/autoupdate.stamp`, writes that
+stamp before contacting the network (so failures do not retry on every shell),
+and logs to `~/.local/state/opencode-autodl/logs/autoupdate.log` (through the
+normal run log).
+
+A shell hook is used instead of cron/systemd because AutoDL containers normally
+run neither, and the system disk — which would hold a crontab — is reset on an
+image change. The hook lives in `$HOME`, which survives restarts, or in the
+persistent store when `persist` is active. If you need updates without an
+interactive shell, use a timer from your own scheduler; the equivalent command
+is `./setup.sh update --yes`.
 
 A broken version can be rolled back by reinstalling a pinned version:
 

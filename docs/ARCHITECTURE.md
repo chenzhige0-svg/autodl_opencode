@@ -25,7 +25,11 @@ lib/mount.sh    Real mount verification and persistence store selection
 lib/net.sh      Proxy sanity, DNS/HTTP probing with failure classification,
                 bounded exponential-backoff retry.
 lib/install.sh  Release download (official artifacts), validation, atomic install,
-                package-manager install, explicit upgrade, install marker.
+                package-manager install, explicit upgrade, version comparison,
+                install marker.
+lib/autoupdate.sh  Opt-in auto-update: a marker-managed shell hook plus a
+                throttled worker that only downloads when the published
+                release differs from the installed one.
 lib/path.sh     Managed rc-file blocks, /usr/local/bin shim, resolution checks
                 (current, interactive, non-interactive), conflict listing.
 lib/config.sh   Config location, persistence symlinking, generation/merge from
@@ -57,6 +61,7 @@ testable and adaptable:
 | `OPENCODE_PERSIST_DIR` | unset |
 | `OPENCODE_INSTALL_METHOD` | `curl` |
 | `OPENCODE_INSTALL_ATTEMPTS` | `3` |
+| `OPENCODE_AUTOUPDATE_INTERVAL` | `86400` (seconds between auto-update checks) |
 | `OCDEPLOY_LOGIN_SHELL` | (auto-detected) |
 
 Test-only hooks: `OCDEPLOY_TEST_MOUNTS` / `OCDEPLOY_TEST_UNMOUNTED`
@@ -68,7 +73,7 @@ Test-only hooks: `OCDEPLOY_TEST_MOUNTS` / `OCDEPLOY_TEST_UNMOUNTED`
 0 ok                1 error              2 usage
 3 environment/network problem            4 installed, authentication required
 5 verification failed                    6 manual action required (repair unsafe)
-7 locked (another run in progress)
+7 locked (another run in progress)      10 update available ('update --check')
 ```
 
 `verify` and `deploy` return `4` when the program is installed and working but
@@ -123,15 +128,19 @@ deleted. No CUDA/PyTorch/Conda/system upgrades are performed.
 **Verified in this workspace** (Arch Linux under WSL2): Bash syntax; ShellCheck
 warning-level; the full test suite (mocked `curl`) — detection, fresh install,
 idempotency, PATH repair, config generation/repair, backup/restore, mount-aware
-persistence, dry-run, CLI contracts, and fault injection (download failure,
-broken binary recovery, missing auth → exit 4, unmounted store refusal, corrupt
-config detection); `doctor` run read-only against the real host.
+persistence, dry-run, CLI contracts, version comparison (`1.0.9 < 1.0.180`),
+no-op/downgrade-safe updates, the opt-in autoupdate hook (idempotent block,
+throttling, coexistence with the PATH block) and fault injection (download
+failure, broken binary recovery, missing auth → exit 4, unmounted store refusal,
+corrupt config detection); `doctor` run read-only against the real host.
 
 **Not verified here** (must be validated on a real AutoDL instance):
 
 - a real GitHub release download (the sandbox network is restricted; the WSL host
   timed out mid-download). The code path is the same as the mocked one, but the
   live artifact/URL was not exercised end to end;
+- a live GitHub *API* tag query (`resolve_latest_version`) and a background
+  autoupdate run triggered by an actual shell login;
 - real `root` behaviour: `/usr/local/bin` shim creation and `apt`/`dpkg`
   dependency installation;
 - actual `/root/autodl-tmp` and `/root/autodl-fs` mounts (simulated via the test

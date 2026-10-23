@@ -18,6 +18,7 @@ OC_EXIT_PARTIAL=4      # installed but action still required (e.g. auth)
 OC_EXIT_VERIFY=5       # verification failed
 OC_EXIT_UNSAFE=6       # can't repair safely, manual action required
 OC_EXIT_LOCKED=7       # another instance holds the lock
+OC_EXIT_UPDATE=10      # a newer release is available ('update --check')
 
 # ---------------------------------------------------------------------------
 # Project layout
@@ -59,9 +60,18 @@ OC_AUTODL_TMP="${OC_AUTODL_TMP:-/root/autodl-tmp}"
 OC_AUTODL_FS="${OC_AUTODL_FS:-/root/autodl-fs}"
 OC_AUTODL_PUB="${OC_AUTODL_PUB:-/root/autodl-pub}"
 
-# Managed shell block markers
+# Managed shell block markers. PATH and autoupdate use separate blocks so that
+# enabling one never rewrites the other.
 OC_MARK_BEGIN="# >>> opencode-autodl >>>"
 OC_MARK_END="# <<< opencode-autodl <<<"
+OC_AUTO_MARK_BEGIN="# >>> opencode-autodl-autoupdate >>>"
+OC_AUTO_MARK_END="# <<< opencode-autodl-autoupdate <<<"
+
+# Minimum number of seconds between background autoupdate checks.
+OC_AUTOUPDATE_INTERVAL="${OPENCODE_AUTOUPDATE_INTERVAL:-86400}"
+case "$OC_AUTOUPDATE_INTERVAL" in
+  ''|*[!0-9]*) OC_AUTOUPDATE_INTERVAL=86400 ;;
+esac
 
 # ---------------------------------------------------------------------------
 # Global runtime flags (overridable by setup.sh argument parsing)
@@ -345,9 +355,11 @@ oc_tmp_init() {
 # ---------------------------------------------------------------------------
 # Managed shell config block
 # ---------------------------------------------------------------------------
-# upsert_managed_block <file> <body>  - idempotent, backed up, marker-delimited
+# upsert_managed_block <file> <body> [begin-marker] [end-marker]
+#   idempotent, backed up, marker-delimited. Markers default to the PATH block.
 upsert_managed_block() {
   local file="$1" body="$2"
+  local begin="${3:-$OC_MARK_BEGIN}" end="${4:-$OC_MARK_END}"
   local tmp
   if [ "$DRY_RUN" = "1" ]; then
     log_dry "update managed block in $file"
@@ -357,7 +369,7 @@ upsert_managed_block() {
   ensure_dir "$(dirname "$file")"
   tmp="$(mktemp "$(dirname "$file")/.oc-tmp.XXXXXX")" || return 1
   if [ -f "$file" ]; then
-    awk -v b="$OC_MARK_BEGIN" -v e="$OC_MARK_END" '
+    awk -v b="$begin" -v e="$end" '
       $0==b {skip=1; next}
       $0==e {skip=0; next}
       skip!=1 {print}
@@ -365,18 +377,43 @@ upsert_managed_block() {
   else
     : >"$tmp"
   fi
-  {
-    printf '\n%s\n' "$OC_MARK_BEGIN"
-    printf '%s\n' "$body"
-    printf '%s\n' "$OC_MARK_END"
-  } >>"$tmp"
+  if [ -n "$body" ]; then
+    {
+      printf '\n%s\n' "$begin"
+      printf '%s\n' "$body"
+      printf '%s\n' "$end"
+    } >>"$tmp"
+  fi
   mv -f "$tmp" "$file" || { rm -f "$tmp"; return 1; }
   log_debug "managed block written to $file"
 }
 
 managed_block_present() {
+  local file="$1" begin="${2:-$OC_MARK_BEGIN}"
+  [ -f "$file" ] && grep -Fq "$begin" "$file" 2>/dev/null
+}
+
+# remove_managed_block <file> [begin-marker] [end-marker]
+# Drops the block (and the markers) without touching the rest of the file.
+remove_managed_block() {
   local file="$1"
-  [ -f "$file" ] && grep -Fq "$OC_MARK_BEGIN" "$file" 2>/dev/null
+  local begin="${2:-$OC_MARK_BEGIN}" end="${3:-$OC_MARK_END}"
+  [ -f "$file" ] || return 0
+  managed_block_present "$file" "$begin" || return 0
+  if [ "$DRY_RUN" = "1" ]; then
+    log_dry "remove managed block from $file"
+    return 0
+  fi
+  backup_path "$file" "shell-$(basename "$file")" >/dev/null || true
+  local tmp
+  tmp="$(mktemp "$(dirname "$file")/.oc-tmp.XXXXXX")" || return 1
+  awk -v b="$begin" -v e="$end" '
+    $0==b {skip=1; next}
+    $0==e {skip=0; next}
+    skip!=1 {print}
+  ' "$file" >"$tmp" || { rm -f "$tmp"; return 1; }
+  mv -f "$tmp" "$file" || { rm -f "$tmp"; return 1; }
+  log_debug "managed block removed from $file"
 }
 
 # ---------------------------------------------------------------------------

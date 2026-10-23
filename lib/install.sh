@@ -64,6 +64,78 @@ resolve_latest_version() {
   printf '%s' "$tag"
 }
 
+# ---------------------------------------------------------------------------
+# Version comparison
+# ---------------------------------------------------------------------------
+# _oc_version_num <component>  -> numeric value of a dot-separated component
+_oc_version_num() {
+  local s="$1"
+  s="${s//[!0-9]/}"
+  [ -n "$s" ] || { printf '0'; return 0; }
+  printf '%s' "$((10#$s))"
+}
+
+# oc_version_cmp <a> <b> -> prints -1 (a older), 0 (same) or 1 (a newer).
+# Compares dotted numeric components; a pre-release suffix only contributes its
+# digits, which is enough to order v1.0.180 / v1.0.180-beta.2 consistently.
+oc_version_cmp() {
+  local a="${1#v}" b="${2#v}"
+  [ "$a" = "$b" ] && { printf '0'; return 0; }
+  local IFS='.'
+  # shellcheck disable=SC2206  # intentional word splitting on '.'
+  local av=($a) bv=($b)
+  local n=${#av[@]} i x y
+  [ "${#bv[@]}" -gt "$n" ] && n="${#bv[@]}"
+  for ((i = 0; i < n; i++)); do
+    x="$(_oc_version_num "${av[i]:-0}")"
+    y="$(_oc_version_num "${bv[i]:-0}")"
+    if [ "$x" -lt "$y" ]; then printf -- '-1'; return 0; fi
+    if [ "$x" -gt "$y" ]; then printf '1'; return 0; fi
+  done
+  printf '0'
+}
+
+# installed_version -> version of the binary the user actually runs (or empty)
+installed_version() {
+  local bin
+  bin="$(resolve_in_path opencode 2>/dev/null || true)"
+  [ -n "$bin" ] || bin="$OC_BIN"
+  opencode_version_at "$bin" 2>/dev/null || true
+}
+
+# update_check [version|latest] -> 0 = current, OC_EXIT_UPDATE = newer exists
+# Read-only: asks the GitHub API what the newest tag is and compares.
+update_check() {
+  local pin="${1:-}" current latest cmp
+  current="$(installed_version)"
+  if [ -z "$current" ]; then
+    log_error "OpenCode is not installed or not executable (expected at $OC_BIN)"
+    return "$OC_EXIT_ENV"
+  fi
+  if [ -n "$pin" ] && [ "$pin" != "latest" ]; then
+    latest="${pin#v}"
+  else
+    if ! latest="$(resolve_latest_version)"; then
+      log_error "could not query the latest release from $OC_GITHUB_API"
+      log_info "hint: if you are in mainland China, try 'source /etc/network_turbo' then re-run"
+      return "$OC_EXIT_ENV"
+    fi
+  fi
+  cmp="$(oc_version_cmp "$current" "$latest")"
+  case "$cmp" in
+    0) log_ok "up to date: v$current"; return 0 ;;
+    -1)
+      log_info "update available: v$current -> v$latest"
+      return "$OC_EXIT_UPDATE"
+      ;;
+    *)
+      log_warn "installed v$current is newer than the published release v$latest"
+      log_info "nothing to do (use 'update v$current --force' to reinstall it)"
+      return 0
+      ;;
+  esac
+}
+
 # install_release_direct <version|latest> <method-label>
 install_release_direct() {
   local version="$1" method="${2:-curl}"
@@ -227,15 +299,48 @@ install_status() {
 }
 
 # upgrade_opencode <version|latest>
+#
+# 'latest' is resolved through the GitHub API first so the current version can be
+# compared with the published one. When they match, nothing is downloaded: an
+# idempotent update is free and safe to run from a timer or a login hook.
 upgrade_opencode() {
   local version="${1:-latest}"
   local bin; bin="$(resolve_in_path opencode)"
   [ -n "$bin" ] || bin="$OC_BIN"
   local old; old="$(opencode_version_at "$bin" 2>/dev/null || printf 'unknown')"
-  log_step "Upgrading OpenCode (current: $old)"
+
+  if [ -z "$version" ] || [ "$version" = "latest" ]; then
+    local target=""
+    target="$(resolve_latest_version 2>/dev/null || true)"
+    if [ -n "$target" ]; then
+      if [ "$FORCE_INSTALL" != "1" ] && [ "$old" != "unknown" ]; then
+        case "$(oc_version_cmp "$old" "$target")" in
+          0)
+            log_ok "already on the latest release (v$old); nothing to do"
+            OC_INSTALLED_VERSION="$old"
+            return 0
+            ;;
+          1)
+            log_warn "installed v$old is newer than the published release v$target; not downgrading"
+            log_info "use 'update $old --force' to reinstall it anyway"
+            return 0
+            ;;
+        esac
+      fi
+      log_step "Upgrading OpenCode ($old -> v$target)"
+      version="$target"
+    else
+      log_step "Upgrading OpenCode (current: $old)"
+      log_warn "could not resolve the latest release; falling back to the 'latest' download pointer"
+    fi
+  else
+    version="${version#v}"
+    log_step "Upgrading OpenCode (current: $old, target: v$version)"
+  fi
+
   local method; method="$(detect_install_method "$bin")"
   if [ "$DRY_RUN" = "1" ]; then
-    log_dry "upgrade opencode via $method"
+    log_dry "upgrade opencode to ${version:-latest} via $method"
     return 0
   fi
   case "$method" in

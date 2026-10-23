@@ -80,7 +80,9 @@ opencode auth login          # or run `opencode` and use /connect
 | `./setup.sh verify` | Verify the deployment (exit 4 = installed, auth pending). |
 | `./setup.sh backup [--with-credentials] [--archive]` | Back up config (and optionally credentials). |
 | `./setup.sh restore <dir> [--with-credentials]` | Restore a backup. |
-| `./setup.sh update [version]` | Explicitly upgrade OpenCode. |
+| `./setup.sh update [version]` | Upgrade OpenCode. Returns immediately when the installed version is already the latest (no re-download). |
+| `./setup.sh update --check` | Only report whether a newer release exists (exit 10 = update available). |
+| `./setup.sh autoupdate on\|off\|status` | Keep OpenCode on the latest release automatically (checked at most once a day, from a shell hook). |
 | `./setup.sh persist` / `unpersist` | Move config/data into / out of the persistent store. |
 | `./setup.sh config` | Create/merge config from environment variables. |
 | `./setup.sh status` | One-line status summary. |
@@ -89,7 +91,7 @@ Global flags: `--dry-run`, `--yes`, `--verbose`, `--json`, `--no-color`,
 `--version`, `--help`.
 
 Install/persistence flags: `--method curl|npm|bun|pnpm|auto`,
-`--opencode-version V`, `--force`, `--persist auto|fs|tmp|path|none`,
+`--opencode-version V`, `--check`, `--force`, `--persist auto|fs|tmp|path|none`,
 `--persist-dir D`, `--preset NAME`, `--config FILE`.
 
 ### Preview without changing anything
@@ -97,6 +99,35 @@ Install/persistence flags: `--method curl|npm|bun|pnpm|auto`,
 ```bash
 ./setup.sh deploy --dry-run
 ```
+
+### Keeping OpenCode up to date
+
+The toolkit never upgrades implicitly, but it can be told to follow releases:
+
+```bash
+./setup.sh update --check     # read-only: is a newer release published?
+./setup.sh update             # upgrade now (no-op if already current)
+./setup.sh autoupdate on      # check ~once a day from your login shell, upgrade if newer
+./setup.sh autoupdate status  # enabled? when was the last check? where is the log?
+./setup.sh autoupdate off     # remove the hook
+```
+
+`update` resolves the latest tag through the GitHub API and compares it with the
+installed version **before** downloading, so running it on a schedule costs
+nothing when nothing changed. `update --check` exits `10` when an update exists
+and `0` when it does not, which makes it usable from scripts.
+
+`autoupdate` is a shell hook rather than cron/systemd: AutoDL containers usually
+run neither, and the system disk (including any crontab) is reset on an image
+change. On each new shell it schedules `setup.sh autoupdate run` in the
+background; that worker is throttled by a stamp file
+(`~/.local/state/opencode-autodl/autoupdate.stamp`) to one check per
+`OPENCODE_AUTOUPDATE_INTERVAL` seconds (default `86400`). It only writes the
+stamp *before* updating, so a network failure does not retry at every shell
+start. A pinned version (`--opencode-version V`) is never affected: the hook
+always asks for `latest`, which is what `upgrade_opencode` compares against.
+
+To see what the hook would do, run it by hand: `./setup.sh autoupdate run`.
 
 ---
 
@@ -193,7 +224,8 @@ lib/common.sh            Config contract, logging, redaction, dry-run, locking
 lib/detect.sh            OS/user/tools/disk/OpenCode discovery (read-only)
 lib/mount.sh             Real mount detection + persistence store selection
 lib/net.sh               Network/proxy diagnostics + bounded retry
-lib/install.sh           Download/validate/install/upgrade
+lib/install.sh           Download/validate/install/upgrade, version comparison
+lib/autoupdate.sh        Opt-in shell-hook auto-update (throttled worker)
 lib/path.sh              PATH repair, managed blocks, system shim, conflicts
 lib/config.sh            Config persistence, generation, safe JSON merge
 lib/doctor.sh            Diagnostic checks and findings
@@ -238,7 +270,7 @@ shellcheck -x -S warning setup.sh lib/*.sh tests/*.sh tests/mocks/*
 |---|---|
 | Bash syntax (`bash -n`) | verified |
 | ShellCheck (`-S warning`) | verified, clean |
-| Unit + integration tests (mocked network) | verified, 97 assertions / 10 suites |
+| Unit + integration tests (mocked network) | verified, 152 assertions / 13 suites |
 | Dry-run makes no changes | verified |
 | Config back-up/restore, credential separation | verified |
 | Mount-aware persistence (refuses unmounted stores) | verified |
